@@ -13,6 +13,7 @@ import android.app.Service;
 import android.os.PowerManager;
 import android.util.Log;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -80,8 +81,10 @@ public class MusicService extends Service implements MediaPlayer.OnPreparedListe
     }
 
     @Override
-    public boolean onUnbind(Intent intent){
-        player.stop();
+    public boolean onUnbind(Intent intent) {
+        if (player.isPlaying()) {
+            player.stop();
+        }
         player.release();
         return false;
     }

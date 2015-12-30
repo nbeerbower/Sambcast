@@ -7,18 +7,28 @@ import android.content.Intent;
 import android.content.ServiceConnection;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.IBinder;
+import android.provider.MediaStore;
 import android.support.v7.app.ActionBarActivity;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.widget.ListView;
 import android.widget.MediaController;
+import android.widget.Toast;
 
+import java.net.MalformedURLException;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+
+import jcifs.netbios.NbtAddress;
+import jcifs.smb.SmbException;
+import jcifs.smb.SmbFile;
 
 
 public class MainActivity extends ActionBarActivity implements MediaController.MediaPlayerControl {
@@ -53,6 +63,75 @@ public class MainActivity extends ActionBarActivity implements MediaController.M
         songView.setAdapter(songAdt);
 
         setController();
+        new SambaTask().execute();
+    }
+
+    class SambaTask extends AsyncTask<Void, Void, Void> {
+
+        @Override
+        protected Void doInBackground(Void... voids) {
+            /* XXX: SAMBA Test stuff */
+            SmbFile[] domains = null;
+            try {
+                domains = (new SmbFile("smb://")).listFiles();
+                for (int i = 0; i < domains.length; i++) {
+                    Log.v("SAMBA", domains[i].getName() + " - domain, Path = " + domains[i].getPath());
+                    Log.v("SAMBA", "File Listing for " + domains[i].getName());
+                    SmbFile[] servers = null;
+                    try {
+                        servers = domains[i].listFiles();
+                    } catch (SmbException e) {
+                        e.printStackTrace();
+                        return null;
+                    }
+
+                    if(servers != null) {
+                        if (servers.length >0) {
+                            for (int j = 0; j < servers.length; j++) {
+                                Log.v("SAMBA-SERVER", servers[j].getName() + " - server, Path = " + servers[i].getPath());
+                                listShares(servers[j].getName());
+                            }
+                        } else {
+                            listShares(domains[i].getName());
+                        }
+                    } else {
+                        listShares(domains[i].getName());
+                    }
+                    Log.v("SAMBA", "Scan finished !");
+                }
+            } catch (SmbException e) {
+                e.printStackTrace();
+                return null;
+            } catch (MalformedURLException e) {
+                e.printStackTrace();
+                return null;
+            }
+            return null;
+        }
+    }
+
+    private void listShares(String name) {
+        Log.v("SAMBA", "File Listing for " + name);
+        String host;
+        try {
+            host = name;
+            if(host.endsWith("/"))
+                host = host.substring(0, host.length() - 1);
+            NbtAddress addrs = NbtAddress.getByName(host);
+            SmbFile test = new SmbFile("smb://" + addrs.getHostAddress());
+            SmbFile[] files = test.listFiles();
+            for(SmbFile s : files)
+            {
+                Log.v("SAMBA", s.getName());
+            }
+        } catch (SmbException e) {
+            Log.e("SAMBA", "ERROR");
+        } catch (MalformedURLException e) {
+            Log.e("SAMBA", "ERROR");
+        } catch (UnknownHostException e) {
+            Log.e("SAMBA", "ERROR");
+        }
+
     }
 
     private ServiceConnection musicConnection = new ServiceConnection(){
@@ -86,8 +165,10 @@ public class MainActivity extends ActionBarActivity implements MediaController.M
 
     @Override
     protected void onDestroy() {
+        controller.hide();
         stopService(playIntent);
         musicSrv = null;
+        unbindService(musicConnection);
         super.onDestroy();
     }
 
@@ -100,9 +181,9 @@ public class MainActivity extends ActionBarActivity implements MediaController.M
     @Override
     protected void onResume(){
         super.onResume();
-        if(paused){
+        if (paused) {
             setController();
-            paused=false;
+            paused = false;
         }
     }
 
@@ -115,22 +196,27 @@ public class MainActivity extends ActionBarActivity implements MediaController.M
     public void getSongList() {
         ContentResolver musicResolver = getContentResolver();
         Uri musicUri = android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
-        Cursor musicCursor = musicResolver.query(musicUri, null, null, null, null);
+        String selection = MediaStore.Audio.Media.IS_MUSIC + " != 0";
+        /*String selection = MediaStore.Audio.Media.IS_MUSIC + " != 0 AND " +
+            MediaStore.Audio.Media.DATA + " LIKE '/mnt/sdcard/Music/%'";*/
+        Toast.makeText(this, musicUri.toString(), Toast.LENGTH_LONG).show();
+        Cursor musicCursor = musicResolver.query(musicUri, null, selection, null, null);
 
         if (musicCursor != null && musicCursor.moveToFirst()) {
-            //get columns
-            int titleColumn = musicCursor.getColumnIndex
-                    (android.provider.MediaStore.Audio.Media.TITLE);
-            int idColumn = musicCursor.getColumnIndex
-                    (android.provider.MediaStore.Audio.Media._ID);
-            int artistColumn = musicCursor.getColumnIndex
-                    (android.provider.MediaStore.Audio.Media.ARTIST);
-            //add songs to list
+            // Scrape data
+            int titleColumn = musicCursor.getColumnIndex(android.provider.MediaStore.Audio.Media.TITLE);
+            int idColumn = musicCursor.getColumnIndex(MediaStore.Audio.Media._ID);
+            int artistColumn = musicCursor.getColumnIndex(MediaStore.Audio.Media.ARTIST);
+            int albumColumn = musicCursor.getColumnIndex(MediaStore.Audio.Media.ALBUM);
+            int sizeColumn = musicCursor.getColumnIndex(MediaStore.Audio.Media.SIZE);
+            // Add the songs to the list
             do {
                 long thisId = musicCursor.getLong(idColumn);
-                String thisTitle = musicCursor.getString(titleColumn);
-                String thisArtist = musicCursor.getString(artistColumn);
-                songList.add(new Song(thisId, thisTitle, thisArtist));
+                String title = musicCursor.getString(titleColumn);
+                String artist = musicCursor.getString(artistColumn);
+                String album = musicCursor.getString(albumColumn);
+                long size = musicCursor.getLong(sizeColumn);
+                songList.add(new Song(thisId, title, artist, album, size));
             }
             while (musicCursor.moveToNext());
 

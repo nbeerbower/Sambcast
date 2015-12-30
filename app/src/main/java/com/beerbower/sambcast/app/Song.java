@@ -7,11 +7,15 @@ public class Song {
     private long id;
     private String title;
     private String artist;
+    private String album;
+    private long size;
 
-    public Song(long songID, String songTitle, String songArtist) {
+    public Song(long songID, String songTitle, String songArtist, String songAlbum, long songSize) {
         id = songID;
         title = songTitle;
         artist = songArtist;
+        album = songAlbum;
+        size = songSize;
     }
 
     public long getID() { return id; }
